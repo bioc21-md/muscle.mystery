@@ -896,9 +896,12 @@ h3 {
 .pull-track>span {
   display:block;
   height:100%;
-  width:0;
+  width:100%;
   background:var(--olive);
-  transition:width .8s ease-out
+  /* Keep layout fixed while the model's pull changes visually. */
+  transform:scaleX(0);
+  transform-origin:left center;
+  transition:transform .8s ease-out
 }
 .tissue-legend {
   display:flex;
