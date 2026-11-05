@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "provider": "Fish Audio",
+  "model": "s2.1-pro-free",
+  "reference_mode": "inline reference; no saved voice profile",
+  "generated_narration": true,
+  "voice": "Synthetic Adam voice from an authorized reference; cleaned-reference preview approved by project owner.",
+  "clips": {
+    "intro": {
+      "filename": "intro.mp3",
+      "duration_seconds": 16.718
+    },
+    "cell-energy": {
+      "filename": "cell-energy.mp3",
+      "duration_seconds": 18.207
+    },
+    "cell-parts": {
+      "filename": "cell-parts.mp3",
+      "duration_seconds": 18.207
+    },
+    "gene": {
+      "filename": "gene.mp3",
+      "duration_seconds": 16.666
+    },
+    "support-intro": {
+      "filename": "support-intro.mp3",
+      "duration_seconds": 14.237
+    },
+    "support-result": {
+      "filename": "support-result.mp3",
+      "duration_seconds": 19.618
+    },
+    "tissue": {
+      "filename": "tissue.mp3",
+      "duration_seconds": 17.267
+    },
+    "closing": {
+      "filename": "closing.mp3",
+      "duration_seconds": 17.528
+    }
+  }
+}
