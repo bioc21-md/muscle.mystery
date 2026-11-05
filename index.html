@@ -3,30 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Follow the clues inside a muscle cell. A hands-on, nine-stage investigation of Duchenne muscular dystrophy for young scientists.">
-  <meta name="theme-color" content="#294124">
-  <title>Muscle Mystery — An investigation inside the cell</title>
-  <!-- Relative files work on GitHub Pages and when index.html is opened directly. -->
+  <meta name="description" content="Join Adam in a hands-on investigation of Duchenne muscular dystrophy. Explore a cell, test its support and discover how cells work together.">
+  <meta name="theme-color" content="#30451b">
+  <title>Muscle Mystery — Adam’s investigation lab</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpath d='M4 29Q10 6 36 9Q29 33 4 29' fill='%23dc807c' stroke='%2330451b' stroke-width='3'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="./style.css">
   <script src="./script.js" defer></script>
 </head>
 <body>
-  <a class="skip-link" href="#stage">Skip to the activity</a>
+  <a class="skip-link" href="#main">Skip to the investigation</a>
   <header class="site-header">
-    <div class="brand" aria-label="Muscle Mystery">
-      <svg viewBox="0 0 48 40" aria-hidden="true"><path d="M5 29C9 11 20 6 41 7C36 28 24 34 5 29Z" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M7 28C18 17 27 12 40 8M15 28C23 22 30 15 35 10M10 20C19 15 26 12 34 10" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-      <span>Muscle Mystery<span class="brand-caption">An investigation inside the cell</span></span>
-    </div>
-    <nav aria-label="Investigation progress"><ol id="progress" class="progress"></ol></nav>
-    <button id="motion-toggle" class="motion-toggle" type="button" aria-pressed="false"><span class="toggle-track" aria-hidden="true"></span><span>Reduce motion</span></button>
+    <button class="brand" id="home-button" aria-label="Muscle Mystery introduction"><svg viewBox="0 0 52 38" aria-hidden="true"><path d="M4 29Q8 7 31 9L47 4L48 12L38 17Q30 35 4 29Z" fill="#ef8d83" stroke="currentColor" stroke-width="2"/><path d="M7 27Q23 12 43 10M8 29Q28 23 39 16" fill="none" stroke="#fff3dd" stroke-width="2"/></svg><span>Muscle Mystery</span></button>
+    <nav id="lab-nav" aria-label="Investigations"></nav>
+    <button id="sound-toggle" class="sound-toggle" aria-pressed="false">Sound off</button>
   </header>
-  <main id="stage" data-stage="1" tabindex="-1" aria-labelledby="stage-title">
-    <h1 id="stage-title">Muscle Mystery</h1>
-    <p>Loading your investigation…</p>
-    <noscript><p>Turn on JavaScript in your browser to explore the activities. This website uses only the files included with it.</p></noscript>
-  </main>
-  <footer id="navigation" class="navigation" aria-label="Activity navigation"></footer>
-  <!-- A persistent live region announces feedback without moving keyboard focus. -->
+  <main id="main" tabindex="-1"><h1>Adam’s investigation lab</h1><p>Loading your tools…</p><noscript><p>Please enable JavaScript to use the experiments. No account or external service is needed.</p></noscript></main>
+  <footer class="site-footer"><span>Made for curious minds. About 15 minutes, at your pace.</span><div><button id="motion-toggle" aria-pressed="false">Reduce motion</button><button id="teacher-button">Teacher notes &amp; sources</button></div></footer>
+  <dialog id="teacher-dialog" aria-labelledby="teacher-title"><div class="dialog-heading"><h2 id="teacher-title">Behind the investigation</h2><button class="icon-button" id="close-teacher" aria-label="Close teacher notes">×</button></div><div id="teacher-content"></div></dialog>
   <div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+  <audio id="narrator" preload="none"></audio>
 </body>
 </html>

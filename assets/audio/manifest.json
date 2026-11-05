@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "provider": "Fish Audio",
+  "model": "s2.1-pro-free",
+  "reference_mode": "inline reference; no saved voice profile",
+  "generated_at": "2026-11-05T18:25:16.111566+00:00",
+  "generated_narration": true,
+  "clips": {
+    "intro": {
+      "filename": "intro.mp3",
+      "title": "Meet Adam",
+      "caption": "Adam is curious about the science inside his muscles.",
+      "script": "Hi, I'm Adam. I'm twelve, and I love soccer. I already know I have Duchenne muscular dystrophy, or DMD. I'm curious about what happens inside my muscles. Will you explore the clues with me?",
+      "word_count": 34,
+      "duration_seconds": 16.718,
+      "bytes": 267492,
+      "sha256": "bef13a363d4ed580b392af08a90e9bb3f4eab799b5faf2857fdbdbb416c8c38e"
+    },
+    "cell-energy": {
+      "filename": "cell-energy.mp3",
+      "title": "Energy for a muscle pull",
+      "caption": "Mitochondria help release usable energy from food.",
+      "script": "Muscles need usable energy to contract. Inside a muscle cell, mitochondria help release that energy from food. Watch what happens when energy is available. In this model, the muscle cell pulls and becomes shorter when it contracts.",
+      "word_count": 37,
+      "duration_seconds": 18.207,
+      "bytes": 291316,
+      "sha256": "2e31bfe45502063ce39a42a20a21a6a72505cf8f60987ef2b18828a18031c00f"
+    },
+    "cell-parts": {
+      "filename": "cell-parts.mp3",
+      "title": "A cell team",
+      "caption": "Cell parts do different jobs and work together.",
+      "script": "Each cell part has a job. The nucleus holds DNA instructions. The membrane controls what enters and leaves. Cytoplasm is the space where many reactions happen. Together, these parts help a muscle cell work.",
+      "word_count": 34,
+      "duration_seconds": 18.207,
+      "bytes": 291316,
+      "sha256": "9bd85eb6637bb42d5d79a260ecccf147221b296b377bde0e4479fae6d8354493"
+    },
+    "gene": {
+      "filename": "gene.mp3",
+      "title": "Instructions for support",
+      "caption": "A change in the DMD gene affects dystrophin production.",
+      "script": "My cells use DNA instructions to make proteins. A change in the DMD gene means they make little or no working dystrophin. Dystrophin normally helps support the muscle cell from inside, close to its membrane.",
+      "word_count": 35,
+      "duration_seconds": 16.666,
+      "bytes": 266657,
+      "sha256": "d20040b33683a6ebe9d69c6646ae9f88e66f145e02384674d16c146424e1a8bb"
+    },
+    "support-intro": {
+      "filename": "support-intro.mp3",
+      "title": "Make a fair comparison",
+      "caption": "Keep energy and contractions the same. Compare dystrophin support.",
+      "script": "Let's compare two muscle cells. Both get the same energy and the same number of contractions. We change only their dystrophin support. Predict which membrane will be more likely to stay protected as the cells pull.",
+      "word_count": 36,
+      "duration_seconds": 14.237,
+      "bytes": 227786,
+      "sha256": "86e1f9de418f1f6e1d2d7b8f7275f41e3781e59be44e8b2384483a45ef3776c1"
+    },
+    "support-result": {
+      "filename": "support-result.mp3",
+      "title": "Why damage can build up",
+      "caption": "Missing support makes membrane damage more likely over time.",
+      "script": "Both cells can contract at first. Without dystrophin's internal support, membrane damage is more likely. Too much calcium can enter and injure mitochondria. Over time, damaged muscle fibres can be lost. Our quick model speeds up that process.",
+      "word_count": 38,
+      "duration_seconds": 19.618,
+      "bytes": 313886,
+      "sha256": "228d188f89183d65f3fd7e052576979aeef7252a2a2af80e807bc0738adcee84"
+    },
+    "tissue": {
+      "filename": "tissue.mp3",
+      "title": "From cells to stairs",
+      "caption": "Loss of working muscle fibres can weaken a whole muscle.",
+      "script": "Muscle cells form tissue. Tissues make a muscle organ, which works in the musculoskeletal system. Fat and scar tissue cannot make an active muscle pull. When working fibres are lost, muscles weaken. That can make climbing stairs harder.",
+      "word_count": 38,
+      "duration_seconds": 17.267,
+      "bytes": 276270,
+      "sha256": "7d61fdacafddb7b923e1f01fdf8ef2af36e0534159ec46663f5b02e15c70811f"
+    },
+    "closing": {
+      "filename": "closing.mp3",
+      "title": "Keep asking questions",
+      "caption": "DMD is not a lack of effort. Care and research matter.",
+      "script": "Now I understand how a change inside cells can affect movement. DMD isn't caused by a lack of effort. There isn't a cure yet, but care helps people live well, and research keeps moving forward. Thanks for investigating with me!",
+      "word_count": 40,
+      "duration_seconds": 17.528,
+      "bytes": 280449,
+      "sha256": "3f86a987eee7cf055817ee5c073b14085ade47700d1cbafde7b73098772cbfbc"
+    }
+  },
+  "voice": "Synthetic Adam voice from an authorized reference; cleaned-reference preview approved by project owner.",
+  "review": "File duration and playback checks completed separately. The preview was reviewed by the project owner; a full human pronunciation review is recommended."
+}
