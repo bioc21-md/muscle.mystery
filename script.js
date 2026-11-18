@@ -30,12 +30,14 @@ globalThis.MuscleModel = MuscleModel;
   const state = {
     view: 'intro', started: false, sound: false, reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
     cell: { tool: 'energy', running: false, contracted: false, gene: false, boundary: false },
-    support: { supported: false, lens: 'membrane', phase: 0, maxPhase: 0, elapsed: 0, running: false, runId: 0, results: { present: null, missing: null }, flagged: null },
+    support: { supported: true, lens: 'membrane', phase: 0, maxPhase: 0, elapsed: 0, running: false, runId: 0, trialCounter: 0, results: { present: null, missing: null }, flagged: null },
     tissue: { working: 6, running: false, result: null, saved: null },
     zoom: { context: 'intro', index: 0, furthest: 0 },
     evidence: { cell: null, support: null, tissue: null }, revealed: false
   };
   let main, audio, announcer, raf = 0, clockKind = '', clockOrigin = 0, lastPhase = -1;
+  let voiceScene = null;
+  const heardClips = new Set();
   let audioToken = 0, currentClip = 'intro', activeClip = null, audioStatus = '', audioFailed = false;
   const phases = ['Ready to test', 'Both fibres contract', 'Membrane damage', 'Calcium overload', 'Mitochondrial injury', 'Fibre loss over time', 'Fat and scar tissue'];
   const supportedPhases = ['Ready to test', 'Both fibres contract', 'Membranes intact', 'Calcium balanced', 'Mitochondria working', 'Fibres recover', 'Both fibres remain intact'];
@@ -62,7 +64,14 @@ globalThis.MuscleModel = MuscleModel;
   const chip = (id,label,action,active,extra='') => `<button id="${id}" type="button" class="chip" data-action="${action}" aria-pressed="${Boolean(active)}" ${extra}>${label}</button>`;
   const checked = yes => yes ? icon('check') : '<span aria-hidden="true">○</span>';
   function say(text) { announcer.textContent = text; }
-  function clipForView() { return state.view==='intro'?'intro':state.view==='zoom'?(state.zoom.context==='tissue'?'tissue':'intro'):state.view==='cell'?(state.cell.tool==='gene'?'gene':state.cell.tool==='boundary'?'cell-parts':'cell-energy'):state.view==='support'?(state.support.maxPhase>=4&&!state.support.supported?'support-result':'support-intro'):state.view==='tissue'?'tissue':'closing'; }
+  function clipForView() {
+    if(state.view==='intro')return 'intro';
+    if(state.view==='zoom')return state.zoom.context==='intro'&&state.zoom.index===0?'intro':null;
+    if(state.view==='cell')return state.cell.tool==='gene'?'gene':state.cell.tool==='boundary'?'cell-parts':'cell-energy';
+    if(state.view==='support')return state.support.results.missing?'support-result':'support-intro';
+    if(state.view==='tissue')return 'tissue';
+    return state.revealed?'closing':null;
+  }
   function narration() { return LAB_NARRATION[currentClip] || LAB_NARRATION.intro; }
   function setDialogue(text) { const node=document.querySelector('#adam-dialogue');if(node)node.textContent=text; }
   function evidenceList() {
@@ -73,6 +82,7 @@ globalThis.MuscleModel = MuscleModel;
     return entries.length ? `<ol>${entries.map(t=>`<li>${icon('check')}<span>${esc(t)}</span></li>`).join('')}</ol>` : '<p class="empty">Your discoveries will appear here. Start by exploring a cell.</p>';
   }
   function voicePanel() {
+    if(!clipForView())return '';
     return `<div class="voice-controls"><button type="button" id="voice-replay" class="text-button" data-action="voice-replay">${icon('sound')}<span>Replay voice</span></button><button type="button" id="voice-pause" class="text-button" data-action="voice-pause" hidden>Pause</button></div><p id="voice-status" class="voice-status" aria-live="polite">${esc(audioStatus)}</p><details class="transcript"><summary>Read the voice transcript</summary><p id="voice-transcript">${esc(narration().script)}</p></details>`;
   }
   function aside(dialogue) {
@@ -110,31 +120,126 @@ globalThis.MuscleModel = MuscleModel;
     return `<div class="cell-display ${c.tool==='energy'?'energy-active':''}"><div class="cell-label-strip"><span class="nucleus-label">Nuclei: DNA instructions</span><span class="mito-label">Mitochondria: usable energy</span></div><div class="specimen ${c.running?'cell-contracting':''}">${LabArt.fibre({id:'cell',supported:true,phase:c.running?1:0,lens:c.tool==='energy'?'energy':'membrane'})}</div><div class="cell-label-strip"><span>Cytoplasm: reactions happen here</span><span>Membrane: controls entry and exit</span></div></div>${c.tool==='energy'?`<div class="energy-track"><b>Food</b>${icon('arrow')}<b>Mitochondria</b>${icon('arrow')}<b>Usable energy</b>${icon('arrow')}<b>Contraction</b></div>`:''}<div class="cell-caption"><h2>${c.tool==='energy'?'Energy makes work possible.':'One long cell, many working parts.'}</h2><p>${c.tool==='energy'?'Mitochondria release usable energy from food. Inside the cytoplasm, protein filaments slide past each other and the muscle cell shortens.':'The membrane controls what enters and leaves. Cytoplasm fills the cell around its organelles. The nuclei hold DNA instructions. A muscle fibre has many nuclei.'}</p></div>`;
   }
   // Investigation 2: receipts retain the conditions and run that produced them.
-  function supportCanSave(){const s=state.support;return Boolean(s.results.present&&s.results.missing&&s.flagged&&s.flagged.runId===s.results.missing.runId);}
+  // Completed trials are immutable receipts. Inspection restores their identity,
+  // while trialCounter remains monotonic even when a learner revisits an old run.
+  function supportCanSave() {
+    const s=state.support;
+    return Boolean(s.results.present&&s.results.missing&&s.flagged&&s.flagged.runId===s.results.missing.runId);
+  }
+  function supportStep() {
+    const s=state.support;
+    if(state.evidence.support||supportCanSave())return 4;
+    if(!s.results.present)return 1;
+    if(!s.results.missing)return 2;
+    return 3;
+  }
   function supportView() {
     const s=state.support;
-    return heading('What protects a muscle cell?','Keep the test the same. Change the support.')+`<div class="workspace"><section class="workbench"><div class="panel"><div id="specimen-pair" class="specimen-pair"><section class="fibre-row"><h2 class="specimen-title"><b>Reference fibre · Support present</b><span>Same contraction test</span></h2><div id="reference-fibre" class="specimen"></div></section><section class="fibre-row"><h2 class="specimen-title"><b id="test-title">Test fibre · Support ${s.supported?'present':'missing'}</b><span>Simplified lab model</span></h2><div id="test-fibre" class="specimen"></div></section><div id="support-annotation" class="support-annotation" aria-live="off"></div></div><p class="model-note support-note">Simplified model. Damage builds over time, not after six real contractions. Changing support resets this model; it is not a treatment.</p><div class="control-row"><span class="control-label">View</span><div class="segmented" role="group" aria-label="Observation lens">${['membrane','calcium','energy'].map(l=>chip('lens-'+l,icon(l)+(l[0].toUpperCase()+l.slice(1)),'lens',s.lens===l,`data-lens="${l}"`)).join('')}</div><span class="divider" aria-hidden="true"></span><span class="control-label">Test support</span><div class="segmented" role="group" aria-label="Test fibre support">${chip('support-present','Present','condition',s.supported,`data-supported="true" ${s.running?'disabled':''}`)}${chip('support-missing','Missing','condition',!s.supported,`data-supported="false" ${s.running?'disabled':''}`)}</div></div></div><div class="toolbar">${button('run-support',icon('play')+' Run matched test','run-support','primary')}${button('reset-support',icon('replay')+' Reset trial','reset-support')}${button('save-support',icon('save')+(state.evidence.support?' Evidence saved':' Save comparison'),'save-support','accent push',!supportCanSave()||Boolean(state.evidence.support))}</div><div class="timeline"><label for="trial-time">Inspect the timeline</label><input type="range" id="trial-time" min="0" max="6" step="1" value="${s.phase}" aria-label="Inspect an observed phase" ${s.maxPhase===0?'disabled':''}><output id="phase-label" class="phase-label">${phases[s.phase]}</output></div><div id="trial-receipts" class="trial-receipts"></div><div id="tear-action"></div><p id="support-help" class="help-line"></p>${state.evidence.support?button('open-tissue','Test what happens to a whole tissue '+icon('arrow'),'open-tissue','accent investigation-link'):''}</section>${aside(s.maxPhase>=2?'Both fibres moved. Why did only one become damaged?':'Let’s give both fibres the same test. What changes when support is missing?')}</div>`;
+    return heading('What protects a muscle cell?','Run two fair tests. Then inspect what changed.')+`
+      <section class="support-lab" aria-label="Dystrophin support investigation">
+        <div class="support-guide">
+          <ol id="support-steps" class="support-steps" aria-label="Your comparison steps"></ol>
+          <div class="support-next-row"><div><h2 id="support-task"></h2><p id="support-help"></p></div>
+            ${button('support-next','Run with support','support-next','primary')}
+          </div>
+        </div>
+        <div class="panel">
+          <div id="specimen-pair" class="specimen-pair">
+            <section class="fibre-row"><h2 class="specimen-title"><b>Reference fibre · Support present</b><span>Same contraction test</span></h2><div id="reference-fibre" class="specimen"></div></section>
+            <section class="fibre-row"><h2 class="specimen-title"><b id="test-title">Test fibre</b><span id="trial-context">Ready for a matched test</span></h2><div id="test-fibre" class="specimen"></div></section>
+          </div>
+          <div class="observation-tools"><span id="observation-prompt">After testing without support, inspect:</span><div class="segmented" role="group" aria-labelledby="observation-prompt">
+            ${chip('lens-membrane',icon('membrane')+' Membrane','lens',true,'data-lens="membrane"')}
+            ${chip('lens-calcium',icon('calcium')+' Calcium','lens',false,'data-lens="calcium"')}
+            ${chip('lens-energy',icon('energy')+' Energy: mitochondria','lens',false,'data-lens="energy"')}
+          </div></div>
+          <div class="observation-caption"><h3 id="observation-title">A fair test</h3><div id="support-annotation" class="support-annotation" aria-live="polite"></div><div id="lens-readout" class="lens-readout"></div><div id="tear-action"></div></div>
+        </div>
+        <div class="support-narrator"><div class="support-adam" aria-hidden="true">${LabArt.adam()}</div><div class="support-audio"><strong>Adam explains the experiment</strong>${voicePanel()}</div></div>
+        <details id="support-options" class="support-extra"><summary>Change conditions or replay a trial</summary>
+          <div class="control-row"><span class="control-label">Test support</span><div class="segmented" role="group" aria-label="Test fibre support">
+            ${chip('support-present','Present','condition',s.supported,'data-supported="true"')}${chip('support-missing','Missing','condition',!s.supported,'data-supported="false"')}
+          </div>${button('run-support','Run this condition','run-support')}${button('reset-support','Reset trial','reset-support')}</div>
+          <div class="timeline"><label for="trial-time">Inspect observed stages</label><input type="range" id="trial-time" min="0" max="6" step="1" value="${s.phase}" aria-label="Inspect an observed phase"><output id="phase-label" class="phase-label"></output></div>
+          <div id="trial-receipts" class="trial-receipts"></div>
+        </details>
+        <details class="support-extra"><summary>Your evidence &amp; model limits</summary>${evidenceList()}<p class="model-note">The animation compresses damage over time. Six stages do not mean six real contractions. Changing support starts a new model trial; it is not a treatment.</p></details>
+      </section>`;
   }
   function refreshSupport() {
     if(state.view!=='support')return;
-    const s=state.support;
+    const s=state.support, step=supportStep();
+    const recordedMissing=!s.supported&&s.results.missing?.runId===s.runId;
+    const canFlag=recordedMissing&&s.phase>=2&&s.phase<=4;
+    const flagged=s.flagged?.runId===s.results.missing?.runId&&Boolean(s.flagged);
+    const inspecting=canFlag&&!s.running;
+    const tasks=[
+      ['Test a supported fibre.','Both fibres have dystrophin. Give them the same contraction test.','Run with support'],
+      ['Change just one condition.','Remove support from the test fibre. Keep energy and contractions the same.','Run without support'],
+      ['Find the first sign of damage.',inspecting?'The marked gap is a membrane tear. Record this observation.':'Reopen the completed trial and look for a membrane tear.',inspecting?'Record the membrane tear':'Inspect the membrane tear'],
+      ['Take your evidence to the tissue lab.','You compared both conditions and recorded a tear. Now investigate a team of cells.',state.evidence.support?'Continue to the tissue lab':'Save evidence & test a tissue']
+    ];
+    const task=tasks[step-1];
+    document.querySelector('#support-task').textContent=task[0];
+    document.querySelector('#support-help').textContent=task[1];
+    document.querySelector('#support-steps').innerHTML=['With support','Without support','Inspect damage','Test a tissue'].map((label,i)=>`<li ${step===i+1?'aria-current="step"':''} class="${step>i+1?'done':''}"><span>${step>i+1?'✓':i+1}</span>${label}</li>`).join('');
+    const paused=s.elapsed>0&&s.elapsed<12000;
+    document.querySelector('#support-next').innerHTML=icon(s.running?'pause':'arrow')+(s.running?'Pause experiment':paused?'Resume experiment':task[2]);
     document.querySelector('#reference-fibre').innerHTML=LabArt.fibre({id:'reference',supported:true,phase:s.phase,lens:s.lens});
     document.querySelector('#test-fibre').innerHTML=LabArt.fibre({id:'test',supported:s.supported,phase:s.phase,lens:s.lens});
-    const canFlag=!s.supported&&s.phase>=2&&s.phase<=4&&s.results.missing?.runId===s.runId;
-    if(canFlag)document.querySelector('#test-fibre').insertAdjacentHTML('beforeend',`<button type="button" id="tear-marker" class="tear-marker ${s.flagged?.runId===s.runId?'flagged':''}" data-action="flag-tear" aria-label="Flag the tear in the test fibre membrane">${s.flagged?.runId===s.runId?'✓':'+'}</button>`);
-    document.querySelector('#specimen-pair').classList.toggle('is-running',s.running&&!state.reduced);
-    const message=s.supported&&s.phase>0?'Both supported fibres contract and recover in this model. Their membranes stay intact.':phaseCopy[s.phase];
-    document.querySelector('#support-annotation').innerHTML=icon(s.lens)+`<span>${message}</span>`;
+    if(canFlag)document.querySelector('#test-fibre').insertAdjacentHTML('beforeend',`<button type="button" id="tear-marker" class="tear-marker ${flagged?'flagged':''}" data-action="flag-tear" aria-label="Record the tear in the test fibre membrane">${flagged?'✓':'+'}</button>`);
+    const moving=(s.running||(voiceScene?.kind==='support'&&!audio.paused))&&!state.reduced;
+    document.querySelector('#specimen-pair').classList.toggle('is-running',moving&&s.phase<5);
+    document.querySelector('#specimen-pair').classList.toggle('is-contracting',moving&&s.phase===1);
     document.querySelector('#test-title').textContent=`Test fibre · Support ${s.supported?'present':'missing'}`;
-    const run=document.querySelector('#run-support');run.innerHTML=icon(s.running?'pause':'play')+(s.running?' Pause test':s.elapsed>0&&s.elapsed<12000?' Resume test':s.maxPhase===6?' Run again':' Run matched test');
-    for(const id of ['support-present','support-missing'])document.getElementById(id).disabled=s.running;
+    document.querySelector('#trial-context').textContent=voiceScene?.kind==='support'?'Narrated replay of your saved trial':recordedMissing?'Reviewing your saved trial':s.running?'Matched test in progress':'Same energy and contractions';
     const phaseLabel=(s.supported?supportedPhases:phases)[s.phase];
+    document.querySelector('#observation-title').textContent=phaseLabel;
+    let message=s.supported&&s.phase>0?'Both supported fibres contract and recover. Their membranes stay intact in this model.':phaseCopy[s.phase];
+    if(recordedMissing&&s.phase===3&&s.lens==='calcium')message='Yellow dots represent calcium. Some calcium is useful; too much enters through a damaged membrane.';
+    if(recordedMissing&&s.phase===4&&s.lens==='energy')message='The teal mitochondria are swollen and injured. They cannot supply usable energy as well.';
+    document.querySelector('#support-annotation').innerHTML=`<span>${message}</span>`;
+    const readout=s.phase===2?['Membrane intact','Membrane torn']:s.phase===3?['Calcium controlled','Too much calcium']:s.phase===4?['Mitochondria working','Mitochondria injured']:s.phase===6?['Fibre remains intact','Fat and scar tissue']:null;
+    document.querySelector('#lens-readout').innerHTML=readout&&!s.supported?`<span><b>Reference:</b> ${readout[0]}</span><span><b>Without support:</b> ${readout[1]}</span>`:'';
+    document.querySelector('#observation-prompt').textContent=s.results.missing?'Inspect a moment from your trial:':'Run without support to unlock these observations.';
+    for(const lens of ['membrane','calcium','energy']){
+      const b=document.getElementById('lens-'+lens);b.disabled=!s.results.missing||s.running;b.setAttribute('aria-pressed',String(s.lens===lens));
+    }
+    for(const key of ['present','missing']){
+      const b=document.getElementById('support-'+key);b.disabled=s.running;b.setAttribute('aria-pressed',String(s.supported===(key==='present')));
+    }
+    const run=document.querySelector('#run-support');run.textContent=s.running?'Pause test':paused?'Resume test':'Run this condition again';
     const range=document.querySelector('#trial-time');range.value=s.phase;range.disabled=s.maxPhase===0;range.setAttribute('aria-valuetext',phaseLabel);
     document.querySelector('#phase-label').textContent=phaseLabel;
-    document.querySelector('#trial-receipts').innerHTML=`<span class="${s.results.present?'done':''}">${checked(s.results.present)}Support present tested</span><span class="${s.results.missing?'done':''}">${checked(s.results.missing)}Support missing tested</span>`;
-    const save=document.querySelector('#save-support');save.disabled=!supportCanSave()||Boolean(state.evidence.support);
-    document.querySelector('#tear-action').innerHTML=canFlag?`<button id="flag-tear-button" class="text-button" data-action="flag-tear">${icon('search')}${s.flagged?.runId===s.runId?'Membrane tear flagged':'Flag the membrane tear'} (keyboard option)</button>`:!s.supported&&s.results.missing?.runId===s.runId?`<button id="inspect-tear" class="text-button" data-action="inspect-tear">${icon('search')}Look back at the membrane tear</button>`:'';
-    document.querySelector('#support-help').textContent=state.evidence.support?'Comparison saved. Your evidence stays here when you reset or revisit.':!s.results.present||!s.results.missing?'Run a complete test with each support setting. Then look back and flag a tear.':!s.flagged?'Look back at the test without support. Flag the tear you observed.':'Save your comparison to take this evidence to the tissue lab.';
+    document.querySelector('#trial-receipts').innerHTML=['present','missing'].map(key=>s.results[key]?`<button type="button" class="text-button" data-action="review-trial" data-trial="${key}">Review saved trial: support ${key}</button>`:`<span>Support ${key}: not tested yet</span>`).join('');
+    document.querySelector('#tear-action').innerHTML=canFlag?button('flag-tear-button',flagged?'Membrane tear recorded':'Record the membrane tear','flag-tear','',flagged):s.results.missing?button('inspect-tear','Return to the membrane tear','inspect-tear','text-button'):'';
+    updateAudioUI();
+  }
+  function restoreSupportTrial(key,phase=6,lens='membrane') {
+    const s=state.support, receipt=s.results[key];if(!receipt)return false;
+    stopClock();
+    Object.assign(s,{supported:receipt.supported,runId:receipt.runId,phase,maxPhase:6,elapsed:12000,lens});
+    return true;
+  }
+  function inspectSupport(lens) {
+    if(!restoreSupportTrial('missing',{membrane:2,calcium:3,energy:4}[lens],lens))return;
+    refreshSupport();say(document.querySelector('#support-annotation').textContent);
+  }
+  function supportNext() {
+    const s=state.support;
+    if(s.running||(s.elapsed>0&&s.elapsed<12000)){runSupport();return;}
+    const step=supportStep();
+    if(step<3){resetSupport(step===1);runSupport();return;}
+    if(step===3){
+      if(!s.supported&&s.phase>=2&&s.phase<=4&&s.runId===s.results.missing.runId)flagTear();
+      else {inspectSupport('membrane');document.querySelector('#flag-tear-button')?.focus();}
+      return;
+    }
+    if(!state.evidence.support){
+      if(!supportCanSave())return;
+      state.evidence.support={present:{...s.results.present},missing:{...s.results.missing},tear:{...s.flagged}};
+    }
+    navigate('tissue');
   }
   // Investigation 3: 12 fixed positions, equal load, arbitrary active-pull units.
   function tissueView() {
@@ -148,27 +253,35 @@ globalThis.MuscleModel = MuscleModel;
   function render(focusTitle=true) {
     const focusId=document.activeElement?.id;
     // Repainting an experiment must not change the transcript of the active voice.
+    const openDetails=[...main.querySelectorAll('details[open][id]')].map(d=>d.id);
     currentClip=activeClip||clipForView(); main.dataset.view=state.view;
     main.innerHTML=state.view==='intro'?introView():state.view==='zoom'?zoomView():state.view==='cell'?cellView():state.view==='support'?supportView():state.view==='tissue'?tissueView():reportView();
+    for(const id of openDetails){const details=document.getElementById(id);if(details)details.open=true;}
     renderNav();if(state.view==='support')refreshSupport();updateAudioUI();
     if(focusTitle){document.querySelector('#view-title')?.focus({preventScroll:true});window.scrollTo({top:0,behavior:'instant'});}
     else if(focusId){const el=document.getElementById(focusId);if(el&&!el.disabled)el.focus({preventScroll:true});}
   }
   // A single cancellable animation clock owns all timed experiments.
   function stopClock() { cancelAnimationFrame(raf);raf=0;clockKind='';state.support.running=false;state.cell.running=false;state.tissue.running=false; }
-  function stopNarration() { audioToken++;audio.pause();audio.currentTime=0;activeClip=null;audioStatus='';audioFailed=false;updateAudioUI(); }
+  function stopNarration() {
+    audioToken++;audio.pause();audio.currentTime=0;
+    if(voiceScene?.kind==='cell'){state.cell.running=false;document.querySelector('.cell-contracting')?.classList.remove('cell-contracting');}
+    if(voiceScene?.kind==='support')document.querySelector('#specimen-pair')?.classList.remove('is-running','is-contracting');
+    voiceScene=null;activeClip=null;currentClip=clipForView();audioStatus='';audioFailed=false;updateAudioUI();
+  }
   function navigate(view) {
     if(!state.started&&view!=='intro')return;
     if(!MuscleModel.canOpen(view,state.evidence)){say('Finish the current investigation to unlock this lab.');return;}
     stopClock();stopNarration();state.view=view;render();
-    if(state.sound&&view!=='intro')playNarration(currentClip);
+    if(state.sound&&currentClip&&!heardClips.has(currentClip))replayNarration();
   }
   function markCellEvidence() {
     if(cellDone())state.evidence.cell={contraction:true,instructions:true};
   }
-  function runCell() {
+  function runCell(quiet=false) {
     if(state.cell.running)return;
-    stopClock();stopNarration();state.cell.tool='energy';state.cell.running=true;render(false);if(state.sound)playNarration('cell-energy');
+    if(state.sound&&!quiet){replayNarration();return;}
+    stopClock();stopNarration();state.cell.tool='energy';state.cell.running=true;render(false);
     const finish=()=>{state.cell.running=false;state.cell.contracted=true;markCellEvidence();render(false);say('The cell shortened. Mitochondria supplied usable energy; filaments in the cytoplasm slid past each other.');document.querySelector('#run-cell')?.focus({preventScroll:true});};
     if(state.reduced){finish();return;}
     clockKind='cell';clockOrigin=performance.now();
@@ -181,12 +294,12 @@ globalThis.MuscleModel = MuscleModel;
     clockKind='';raf=0;refreshSupport();
     setDialogue(s.supported?'With support present, both fibres handled this test. Now compare the missing-support setting.':'Damage builds over time. Look back through the timeline to inspect the membrane tear.');
     say(s.supported?'Supported trial complete. Both membranes stayed intact.':'Unsupported trial complete. Inspect the timeline to find and flag a membrane tear.');
-    if(state.sound&&!s.supported)playNarration('support-result');
+    document.querySelector('#support-next')?.focus();
   }
   function runSupport() {
     const s=state.support;
     if(s.running){cancelAnimationFrame(raf);raf=0;clockKind='';s.running=false;refreshSupport();say('Test paused. Inspect the changes or resume.');return;}
-    if(s.elapsed===0||s.elapsed>=12000){s.elapsed=0;s.phase=0;s.maxPhase=0;s.runId++;}
+    if(s.elapsed===0||s.elapsed>=12000){s.elapsed=0;s.phase=0;s.maxPhase=0;s.runId=++s.trialCounter;}
     if(state.reduced){finishSupport();return;}
     s.running=true;clockKind='support';clockOrigin=performance.now()-s.elapsed;lastPhase=-1;refreshSupport();
     function tick(now){if(clockKind!=='support')return;s.elapsed=Math.min(12000,now-clockOrigin);s.phase=Math.min(6,Math.floor(s.elapsed/2000));s.maxPhase=Math.max(s.maxPhase,s.phase);if(s.elapsed>=12000){finishSupport();return;}if(lastPhase!==s.phase){lastPhase=s.phase;refreshSupport();}raf=requestAnimationFrame(tick);}
@@ -199,7 +312,7 @@ globalThis.MuscleModel = MuscleModel;
     const s=state.support;
     if(s.supported||s.phase<2||s.phase>4||s.results.missing?.runId!==s.runId){say('Inspect a tear in a completed trial with support missing.');return;}
     s.flagged={runId:s.runId,supported:false,phase:s.phase};refreshSupport();say('Membrane tear flagged. This observation belongs to your trial with support missing.');
-    document.querySelector('#flag-tear-button')?.focus({preventScroll:true});
+    document.querySelector('#support-next')?.focus();
   }
   function runTissue() {
     const t=state.tissue;if(t.running)return;stopClock();t.running=true;t.result=null;render(false);const tested=t.working;
@@ -207,57 +320,115 @@ globalThis.MuscleModel = MuscleModel;
     if(state.reduced){finish();return;}clockKind='tissue';clockOrigin=performance.now();
     function tick(now){if(clockKind!=='tissue')return;if(now-clockOrigin>=1000){raf=0;clockKind='';finish();}else raf=requestAnimationFrame(tick);}raf=requestAnimationFrame(tick);
   }
-  // Audio is optional and always local. No provider credential or API belongs here.
+  // Narrated replays use the audio clock, never a competing animation timer.
+  // Cue boundaries follow phrase pauses in the approved local recordings.
+  function replayNarration() {
+    const id=clipForView();if(!id)return;
+    stopClock();stopNarration();
+    if(id==='support-result'){
+      restoreSupportTrial('missing',1,'membrane');
+      voiceScene={kind:'support',cue:-1,runId:state.support.runId};refreshSupport();
+    }else if(id==='support-intro'){
+      Object.assign(state.support,{phase:0,maxPhase:0,elapsed:0});refreshSupport();
+    }else if(id==='cell-energy'){
+      state.cell.tool='energy';state.cell.running=false;
+      voiceScene={kind:'cell',cue:-1};render(false);
+    }
+    playNarration(id);
+  }
+  function syncNarration(force=false) {
+    if(!voiceScene)return;
+    const t=audio.currentTime;
+    if(voiceScene.kind==='support'&&state.view==='support'){
+      const cue=t<3.2?1:t<8.88?2:t<10.7?3:t<12.67?4:t<16.94?5:6;
+      if(force||cue!==voiceScene.cue){
+        voiceScene.cue=cue;state.support.phase=cue;
+        state.support.lens=cue===3?'calcium':cue===4?'energy':'membrane';refreshSupport();
+      }
+    }else if(voiceScene.kind==='cell'&&state.view==='cell'){
+      const cue=t<3?0:t<10.14?1:t<13.43?2:3;
+      if(force||cue!==voiceScene.cue){
+        voiceScene.cue=cue;state.cell.running=cue===3;
+        if(cue===3){state.cell.contracted=true;markCellEvidence();}
+        const content=document.querySelector('#cell-content');
+        content.innerHTML=cellContent();content.dataset.voiceStage=String(cue);
+        content.querySelector('.specimen')?.classList.toggle('cell-contracting',cue===3&&!audio.paused&&!state.reduced);
+      }
+    }
+  }
+  function finishNarration() {
+    const wasCell=voiceScene?.kind==='cell';
+    if(voiceScene?.kind==='support'){state.support.phase=6;state.support.lens='membrane';}
+    voiceScene=null;activeClip=null;audioStatus='Explanation finished';
+    if(wasCell){state.cell.running=false;state.cell.contracted=true;markCellEvidence();render(false);}
+    else if(state.view==='support')refreshSupport();
+    updateAudioUI();
+  }
+  function audioFailure(token=audioToken) {
+    if(token!==audioToken)return;
+    const fallback=voiceScene?.kind==='cell';voiceScene=null;activeClip=null;audio.pause();
+    if(fallback){state.cell.running=false;runCell(true);}
+    audioFailed=true;audioStatus='Audio is unavailable. The model and written explanations still work.';updateAudioUI();
+    if(state.view==='support')refreshSupport();
+  }
+  // Audio remains optional and local. One player prevents overlapping clips.
   function updateSoundControls(){const b=document.querySelector('#sound-toggle');b.innerHTML=icon(state.sound?'sound':'mute')+(state.sound?'Sound on':'Sound off');b.setAttribute('aria-pressed',String(state.sound));}
   function updateAudioUI() {
+    if(!activeClip)currentClip=clipForView();
     const status=document.querySelector('#voice-status');if(status)status.textContent=audioStatus;
-    const pause=document.querySelector('#voice-pause');if(pause){pause.hidden=!state.sound||!audio.src||audio.ended||audioFailed;pause.textContent=audio.paused?'Resume voice':'Pause voice';}
+    const replay=document.querySelector('#voice-replay');if(replay)replay.innerHTML=icon('sound')+(state.view==='support'&&state.support.results.missing?'Watch Adam explain the changes':'Hear this explanation');
+    const pause=document.querySelector('#voice-pause');if(pause){pause.hidden=!state.sound||!activeClip||audio.ended||audioFailed;pause.textContent=audio.paused?'Resume explanation':'Pause explanation';}
     const transcript=document.querySelector('#voice-transcript');if(transcript)transcript.textContent=narration().script;
   }
   async function playNarration(id,restart=true) {
     if(!state.sound)return;const clip=LAB_NARRATION[id];if(!clip)return;
-    const token=++audioToken;audio.pause();currentClip=id;activeClip=id;audioFailed=false;
+    const token=++audioToken;audio.pause();currentClip=id;activeClip=id;audioFailed=false;heardClips.add(id);
     if(restart||!audio.src.endsWith('/'+clip.filename)){audio.src='./assets/audio/'+clip.filename;audio.currentTime=0;}
-    audioStatus='Loading voice…';updateAudioUI();
-    try {await audio.play();if(token!==audioToken)return;audioStatus='Voice playing';updateAudioUI();}
-    catch(e){if(token!==audioToken)return;audioFailed=true;audioStatus='Voice is unavailable. Keep exploring with the captions.';updateAudioUI();}
+    audioStatus='Loading explanation…';updateAudioUI();
+    try {await audio.play();if(token!==audioToken)return;audioStatus=voiceScene?'Voice and model playing together':'Voice playing';syncNarration(true);updateAudioUI();}
+    catch(e){audioFailure(token);}
   }
   function showTeacher(){stopClock();stopNarration();if(state.view==='support')refreshSupport();else if(state.view==='cell'||state.view==='tissue')render(false);const d=document.querySelector('#teacher-dialog');if(!d.open)d.showModal();}
   function teacherNotes(){return `<section class="teacher-section"><p>A roughly 15-minute, guided investigation for Grade 7–8. Students change model conditions, compare results and use their evidence to explain Adam’s experience. Adam is a fictional 12-year-old with an established DMD diagnosis.</p></section><section class="teacher-section"><h3>Curriculum and evidence of learning</h3><table class="teacher-table"><thead><tr><th>Connection</th><th>Where the student demonstrates it</th></tr></thead><tbody><tr><th>Cell components</th><td>Explore a cell: nucleus and DNA instructions, membrane entry/exit, mitochondria and usable energy, cytoplasm and reactions. Addresses the assignment’s selected animal-cell components within Grade 8 B2.2, not the entire plant-and-animal-cell expectation.</td></tr><tr><th>Levels of organization</th><td>The zoom journey connects one muscle cell with tissue, a skeletal muscle organ containing several tissues, and the musculoskeletal system. Grade 8 B2.6.</td></tr><tr><th>Scientific investigation</th><td>Run matched support tests, vary working fibres in an equal-size tissue sample, inspect outcomes, and explain a claim using evidence.</td></tr></tbody></table></section><section class="teacher-section"><h3>What the models simplify</h3><ul><li>Muscular dystrophy is a group of conditions. This experience focuses on Duchenne: a DMD gene variant leads to little or no functional dystrophin.</li><li>Dystrophin is inside the membrane, linking the internal cytoskeleton to a membrane protein complex. It helps stabilize the fibre; it does not power contraction.</li><li>Calcium is normally useful for contraction and other cell functions. Membrane tears illustrate one route to excessive calcium; DMD has other interacting injury mechanisms.</li><li>Animation phases compress a complex process over time. Six phases do not mean six real contractions cause cell death. Supported fibres remaining intact here does not mean healthy cells cannot be injured.</li><li>The support switch changes a fresh classroom model. It does not repair Adam or represent a treatment. This is not exercise advice.</li><li>The 12-position tissue comparison uses one arbitrary pull unit per working fibre. Fat and scar tissue contribute no active muscle contraction. Real muscles have more complex mechanics and repair; these are not patient measurements or predictions.</li><li>The DNA strips are symbolic, not real sequences. The nucleus stores instructions; protein-making machinery elsewhere in the cell uses them.</li></ul></section><section class="teacher-section"><h3>Sources</h3><ul><li><a href="https://medlineplus.gov/genetics/condition/duchenne-and-becker-muscular-dystrophy/" target="_blank" rel="noopener noreferrer">MedlinePlus Genetics: Duchenne and Becker muscular dystrophy</a></li><li><a href="https://medlineplus.gov/genetics/gene/dmd/" target="_blank" rel="noopener noreferrer">MedlinePlus Genetics: the DMD gene and dystrophin</a></li><li><a href="https://doi.org/10.3390/ijms222011040" target="_blank" rel="noopener noreferrer">Zabłocka and colleagues (2021): disrupted calcium homeostasis in DMD</a></li><li><a href="https://www.nhs.uk/conditions/muscular-dystrophy/treatment/" target="_blank" rel="noopener noreferrer">NHS: muscular dystrophy treatment and care</a></li><li><a href="https://assets-us-01.kc-usercontent.com/fbd574c4-da36-0066-a0c5-849ffb2de96e/8ab9d77d-19ee-48b7-bc28-c3caa93c28eb/SciTech_G8_AODA.pdf" target="_blank" rel="noopener noreferrer">Ontario Science and Technology (2022): Grade 8 expectations</a></li></ul></section><section class="teacher-section"><h3>Credits and classroom use</h3><p>Created for BIOC21 by Mishal, Aman, Usman and Uzair, with AI-assisted development. Activities, scripts and SVG diagrams were prepared for this project; scientific explanations draw on the sources above. Adam’s prerecorded synthetic narration uses Fish Audio S2.1 Pro, based on a reference recording supplied with confirmed permission. Adam is fictional; this is generated dialogue, not a chatbot.</p><p>All activities and audio use local files. No account, tracking, cookies or saved personal data. Refreshing restarts progress. Only optional source links need the wider internet. Use quiet mode if students do not have headphones.</p><p>Suggested learning check: ask students to explain why missing dystrophin can affect climbing stairs, using one observation from each experiment. Completing the activity is not itself proof of understanding. Target-age classroom engagement has not yet been validated.</p></section>`;}
   // One delegated event router keeps native controls keyboard/touch accessible.
   function action(event) {
     const el=event.target.closest('[data-action]');if(!el||el.disabled)return;const a=el.dataset.action;
+    // Any manual change cancels the old explanation before the visual changes.
+    if(a!=='voice-replay'&&a!=='voice-pause')stopNarration();
     if(a==='start-sound'||a==='start-quiet'){state.started=true;state.sound=a==='start-sound';state.zoom={context:'intro',index:0,furthest:0};state.view='zoom';render();if(state.sound)playNarration('intro');return;}
     if(a==='scale'){const n=Number(el.dataset.index);if(n<=state.zoom.furthest){state.zoom.index=n;render();}return;}
     if(a==='zoom-back'){state.zoom.index=Math.max(0,state.zoom.index-1);render();return;}
     if(a==='zoom-forward'){if(state.zoom.index<4){state.zoom.index++;state.zoom.furthest=Math.max(state.zoom.index,state.zoom.furthest);render();}else if(state.zoom.context==='intro')navigate('cell');else{state.evidence.tissue={...state.tissue.saved};navigate('report');}return;}
-    if(a==='cell-tool'||a==='cell-gene'){stopClock();state.cell.tool=a==='cell-gene'?'gene':el.dataset.tool;if(state.cell.tool==='gene')state.cell.gene=true;if(state.cell.tool==='boundary')state.cell.boundary=true;markCellEvidence();stopNarration();render(false);if(state.sound)playNarration(clipForView());return;}
+    if(a==='cell-tool'||a==='cell-gene'){stopClock();state.cell.tool=a==='cell-gene'?'gene':el.dataset.tool;if(state.cell.tool==='gene')state.cell.gene=true;if(state.cell.tool==='boundary')state.cell.boundary=true;markCellEvidence();stopNarration();render(false);if(state.sound)replayNarration();return;}
     if(a==='run-cell'){runCell();return;}
     if(a==='open-support'){navigate('support');return;}
-    if(a==='lens'){state.support.lens=el.dataset.lens;for(const l of ['membrane','calcium','energy'])document.getElementById('lens-'+l).setAttribute('aria-pressed',String(l===state.support.lens));refreshSupport();return;}
+    if(a==='support-next'){supportNext();return;}
+    if(a==='review-trial'){restoreSupportTrial(el.dataset.trial);refreshSupport();return;}
+    if(a==='lens'){inspectSupport(el.dataset.lens);return;}
     if(a==='condition'){resetSupport(el.dataset.supported==='true');return;}
     if(a==='run-support'){runSupport();return;}
     if(a==='reset-support'){resetSupport();return;}
-    if(a==='inspect-tear'){state.support.phase=3;refreshSupport();document.querySelector('#tear-marker')?.focus();return;}
+    if(a==='inspect-tear'){inspectSupport('membrane');document.querySelector('#tear-marker')?.focus();return;}
     if(a==='flag-tear'){flagTear();return;}
-    if(a==='save-support'){if(!supportCanSave())return;state.evidence.support={present:{...state.support.results.present},missing:{...state.support.results.missing},tear:{...state.support.flagged}};render(false);say('Your comparison is saved. The tissue investigation is now open.');document.querySelector('#open-tissue')?.focus({preventScroll:true});return;}
+    if(a==='save-support'){if(supportCanSave())supportNext();return;}
     if(a==='open-tissue'){navigate('tissue');return;}
     if(a==='run-tissue'){runTissue();return;}
     if(a==='reset-tissue'){state.tissue.result=null;render(false);return;}
     if(a==='zoom-out'){stopClock();stopNarration();state.zoom={context:'tissue',index:0,furthest:0};state.view='zoom';render();return;}
-    if(a==='reveal-explanation'){state.revealed=true;render(false);say('Compare your explanation with the model explanation.');document.querySelector('#model-explanation')?.focus({preventScroll:true});document.querySelector('#model-explanation')?.scrollIntoView({block:'nearest',behavior:state.reduced?'instant':'smooth'});return;}
+    if(a==='reveal-explanation'){state.revealed=true;render(false);say('Compare your explanation with the model explanation.');document.querySelector('#model-explanation')?.focus({preventScroll:true});document.querySelector('#model-explanation')?.scrollIntoView({block:'nearest',behavior:state.reduced?'instant':'smooth'});if(state.sound)replayNarration();return;}
     if(a==='return-lab'){navigate('support');return;}
     if(a==='teacher'){showTeacher();return;}
-    if(a==='voice-replay'){if(!state.sound){state.sound=true;updateSoundControls();}playNarration(clipForView());return;}
-    if(a==='voice-pause'){if(audio.paused)playNarration(currentClip,false);else{audioToken++;audio.pause();audioStatus='Voice paused';updateAudioUI();}return;}
+    if(a==='voice-replay'){if(!state.sound){state.sound=true;updateSoundControls();}replayNarration();return;}
+    if(a==='voice-pause'){if(audio.paused)playNarration(currentClip,false);else{audioToken++;audio.pause();audioStatus=voiceScene?'Voice and model paused':'Voice paused';syncNarration(true);updateAudioUI();}return;}
   }
   function boot() {
     main=document.querySelector('#main');audio=document.querySelector('#narrator');announcer=document.querySelector('#announcer');
     document.querySelector('#teacher-content').innerHTML=teacherNotes();
     main.addEventListener('click',action);
     main.addEventListener('input',event=>{
-      if(event.target.id==='trial-time'){const s=state.support;cancelAnimationFrame(raf);clockKind='';s.running=false;s.phase=Math.min(s.maxPhase,Number(event.target.value));refreshSupport();}
+      if(event.target.id==='trial-time'){stopNarration();const s=state.support;cancelAnimationFrame(raf);clockKind='';s.running=false;s.phase=Math.min(s.maxPhase,Number(event.target.value));refreshSupport();}
       if(event.target.id==='working-fibres'){
+        stopNarration();
         state.tissue.working=MuscleModel.tissue(event.target.value).working;state.tissue.result=null;
         // Keep the native slider mounted while dragging or using its arrow keys.
         const n=MuscleModel.tissue(state.tissue.working);document.querySelector('#working-count').textContent=`${n.working} / 12`;
@@ -272,13 +443,15 @@ globalThis.MuscleModel = MuscleModel;
     });
     document.querySelector('#lab-nav').addEventListener('click',e=>{const b=e.target.closest('[data-nav]');if(b&&!b.disabled)navigate(b.dataset.nav);});
     document.querySelector('#home-button').addEventListener('click',()=>navigate('intro'));
-    document.querySelector('#sound-toggle').addEventListener('click',()=>{state.sound=!state.sound;if(!state.sound)stopNarration();else playNarration(clipForView());updateSoundControls();});
-    document.querySelector('#motion-toggle').addEventListener('click',()=>{state.reduced=!state.reduced;stopClock();render(false);say(state.reduced?'Reduced motion on. Experiments show static results you can inspect.':'Animations on.');});
+    document.querySelector('#sound-toggle').addEventListener('click',()=>{state.sound=!state.sound;if(!state.sound)stopNarration();else replayNarration();updateSoundControls();});
+    document.querySelector('#motion-toggle').addEventListener('click',()=>{state.reduced=!state.reduced;stopClock();stopNarration();render(false);say(state.reduced?'Reduced motion on. Experiments show static results you can inspect.':'Animations on.');});
     document.querySelector('#teacher-button').addEventListener('click',showTeacher);
     document.querySelector('#close-teacher').addEventListener('click',()=>document.querySelector('#teacher-dialog').close());
-    audio.addEventListener('ended',()=>{audioStatus='Voice finished';updateAudioUI();});
-    audio.addEventListener('error',()=>{audioFailed=true;audioStatus='Voice is unavailable. Keep exploring with the captions.';updateAudioUI();});
-    document.addEventListener('visibilitychange',()=>{if(document.hidden){stopClock();audioToken++;if(!audio.paused)audioStatus='Voice paused';audio.pause();if(state.view==='support')refreshSupport();else if(state.view==='cell'||state.view==='tissue')render(false);updateAudioUI();}});
+    audio.addEventListener('timeupdate',()=>syncNarration());
+    audio.addEventListener('seeked',()=>syncNarration(true));
+    audio.addEventListener('ended',()=>{if(audio.ended)finishNarration();});
+    audio.addEventListener('error',()=>{if(activeClip)audioFailure();});
+    document.addEventListener('visibilitychange',()=>{if(document.hidden){stopClock();audioToken++;if(!audio.paused)audioStatus='Voice paused';audio.pause();if(voiceScene)syncNarration(true);else if(state.view==='support')refreshSupport();else if(state.view==='cell'||state.view==='tissue')render(false);updateAudioUI();}});
     render(false);
   }
   // Defer until the manifest and art declarations below have been evaluated too.
@@ -365,8 +538,8 @@ const LabArt = (() => {
   const safeId = (id, fallback) => String(id).replace(/[^a-zA-Z0-9_-]/g, '') || fallback;
   const svg = (box, label, art, classes = '') => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${box}" role="img" aria-label="${esc(label)}" class="lab-art ${classes}" focusable="false">${art}</svg>`;
   const nucleus = (x, y, s = 1, angle = 0) => `<g class="nucleus" transform="translate(${x} ${y}) rotate(${angle}) scale(${s})"><ellipse rx="21" ry="7" fill="#D4A7E4" stroke="${C.membrane}" stroke-width="1.6"/><ellipse rx="15.5" ry="4.9" fill="${C.purple}"/><ellipse cx="1" cy=".4" rx="9" ry="3.2" fill="${C.purpleDeep}"/><path d="M-14-2 Q-3-6 9-3" fill="none" stroke="#E9C8F3" stroke-width="1.2" stroke-linecap="round"/></g>`;
-  const mito = (x, y, s = 1, damaged = false, emphasis = false) => `<g class="mitochondrion${damaged ? ' is-injured' : ''}" transform="translate(${x} ${y}) rotate(-14) scale(${s})">${emphasis ? `<ellipse rx="36" ry="20" fill="none" stroke="${C.tealDeep}" stroke-width="1.2" stroke-dasharray="3 4" opacity=".5"/>` : ''}<ellipse rx="30" ry="15" fill="${damaged ? '#A8D3BE' : C.tealLight}" stroke="${C.tealDeep}" stroke-width="2.5"/><ellipse rx="25" ry="11" fill="${damaged ? '#72B5A6' : C.teal}"/><path d="${damaged ? 'M-20 0 Q-20-9-14-7 L-11 4 Q-9 10-4 4 L-5-5 Q-4-10 1-7 M7-5 L6 4 Q7 11 13 6 L14-3 Q15-8 20-3' : 'M-20 0 Q-21-8-15-7 Q-10-6-12 2 Q-13 9-7 7 Q-2 5-5-3 Q-7-10 0-7 Q6-5 3 3 Q2 10 8 7 Q13 5 10-3 Q9-9 16-6 Q22-3 19 3'}" fill="none" stroke="${C.tealDeep}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${damaged ? `<path d="M-12-14 L-7-8 M16 10 L21 5" stroke="#F9E4B1" stroke-width="2.6" stroke-linecap="round"/>` : ''}</g>`;
-  const calcium = (x, y, r = 3.7, emphasis = false) => `<g class="calcium-dot" style="--calcium-entry-y:${y < 95 ? -24 : 24}px"><circle cx="${x}" cy="${y}" r="${r}" fill="${C.gold}" stroke="${C.goldDeep}" stroke-width="${emphasis ? 1.8 : 1.2}"/><circle cx="${x - r * .23}" cy="${y - r * .28}" r="${r * .38}" fill="#FFF1A3"/></g>`;
+  const mito = (x, y, s = 1, damaged = false, emphasis = false) => `<g class="mitochondrion${damaged ? ' is-injured' : ''}" transform="translate(${x} ${y}) rotate(-14) scale(${s})">${emphasis ? `<ellipse rx="36" ry="20" fill="none" stroke="${C.tealDeep}" stroke-width="2.5" stroke-dasharray="3 4"/>` : ''}<ellipse rx="30" ry="15" fill="${damaged ? '#A8D3BE' : C.tealLight}" stroke="${C.tealDeep}" stroke-width="2.5"/><ellipse rx="25" ry="11" fill="${damaged ? '#72B5A6' : C.teal}"/><path d="${damaged ? 'M-20 0 Q-20-9-14-7 L-11 4 Q-9 10-4 4 L-5-5 Q-4-10 1-7 M7-5 L6 4 Q7 11 13 6 L14-3 Q15-8 20-3' : 'M-20 0 Q-21-8-15-7 Q-10-6-12 2 Q-13 9-7 7 Q-2 5-5-3 Q-7-10 0-7 Q6-5 3 3 Q2 10 8 7 Q13 5 10-3 Q9-9 16-6 Q22-3 19 3'}" fill="none" stroke="${C.tealDeep}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${damaged ? `<path d="M-12-14 L-7-8 M16 10 L21 5" stroke="#F9E4B1" stroke-width="2.6" stroke-linecap="round"/>` : ''}</g>`;
+  const calcium = (x, y, r = 3.7, emphasis = false) => { r *= emphasis ? 1.8 : 1; return `<g class="calcium-dot" style="--calcium-entry-y:${y < 95 ? -24 : 24}px"><circle cx="${x}" cy="${y}" r="${r}" fill="${C.gold}" stroke="${C.goldDeep}" stroke-width="${emphasis ? 1.8 : 1.2}"/><circle cx="${x - r * .23}" cy="${y - r * .28}" r="${r * .38}" fill="#FFF1A3"/></g>`; };
   const support = (x, y, lower = false) => `<g class="support-link" transform="translate(${x} ${y}) scale(1 ${lower ? -1 : 1})"><path d="M-5 0 H5" fill="none" stroke="${C.olive}" stroke-width="4.5" stroke-linecap="round"/><path d="M0 2 L-1 7 L1 11 L0 15 M-6 16 H6" fill="none" stroke="${C.limeDark}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M0 2 L-1 7 L1 11 L0 15 M-6 16 H6" fill="none" stroke="${C.lime}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></g>`;
 
   function face(mood = 'curious') {
